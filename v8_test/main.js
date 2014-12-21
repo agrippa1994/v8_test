@@ -1,5 +1,5 @@
 
-// Test the garbage collector
+
 function testGarbageCollector(time)
 {
 	if(typeof time != "number")
@@ -29,26 +29,44 @@ function testCallNTimes(times)
 	return times == i
 }
 
-print("V8-Tests will be started...\n")
+function loop()
+{
+	gc();
+	
+	print("V8-Tests will be started...\n")
 
-print("The garbage collector will be tested...")
-testGarbageCollector(5000)
-print("The garbage collector has been successfully tested.")
+	print("The garbage collector will be tested...")
+	testGarbageCollector(50)
+	print("The garbage collector has been successfully tested.")
 
-print("\n")
+	print("\n")
 
-print("CallNTimes will be tested...")
-var res = testCallNTimes(10000)
-if(res)
-	print("CallNTimes has been successfully tested")
-else
-	print("CallNTimes failed!")
+	print("CallNTimes will be tested...")
+	var res = testCallNTimes(100)
+	if(res)
+		print("CallNTimes has been successfully tested")
+	else
+		print("CallNTimes failed!")
 
-print("\n")
+	print("\n")
 
-print("Test sleep of one second (TickCount : " + GetTickCount() + ")")
-sleep(1000)
-print("Test sleep finished (TickCount: " + GetTickCount() + ")")
+	print("Test sleep of one second (TickCount : " + GetTickCount() + ")")
+	sleep(50)
+	print("Test sleep finished (TickCount: " + GetTickCount() + ")")
 
-print("\n")
-print("V8-Tests finished")
+	print("\n")
+
+	print("Testing threads...")
+
+	
+}
+
+function main()
+{
+	TimedThread(1000, function(){
+		print("thread")
+	})
+}
+
+main();
+for(;;/*loop()*/);

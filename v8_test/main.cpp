@@ -10,6 +10,7 @@
 #include <fstream>
 #include <sstream>
 #include <thread>
+#include <mutex>
 
 #pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "icui18n.lib")
@@ -20,6 +21,12 @@
 #pragma comment(lib, "v8_nosnapshot.lib")
 
 using namespace v8;
+
+Isolate *g_pIsolate = NULL;
+
+#define ENTER_V8 Locker lock(g_pIsolate); \
+	Isolate::Scope isolate_scope(g_pIsolate); \
+	HandleScope handle_scope(g_pIsolate); \
 
 std::string readFileContent(const std::string& path)
 {
@@ -32,8 +39,7 @@ std::string readFileContent(const std::string& path)
 
 void print(const FunctionCallbackInfo<Value>& args)
 {
-	auto isolate = Isolate::GetCurrent();
-	HandleScope scope(isolate);
+	ENTER_V8
 
 	for (int i = 0; i < args.Length(); i++)
 	{
@@ -48,42 +54,39 @@ void print(const FunctionCallbackInfo<Value>& args)
 
 void callNTimes(const FunctionCallbackInfo<Value>& args)
 {
-	auto isolate = args.GetIsolate();
-	HandleScope scope(isolate);
+	ENTER_V8
 
 	if (args.Length() != 2)
 	{
-		isolate->ThrowException(String::NewFromUtf8(isolate, "Wrong parameter count!"));
+		g_pIsolate->ThrowException(String::NewFromUtf8(g_pIsolate, "Wrong parameter count!"));
 		return;
 	}
 
 	if (!args[0]->IsInt32() || !args[1]->IsFunction())
 	{
-		isolate->ThrowException(String::NewFromUtf8(isolate, "Wrong parameter types!"));
+		g_pIsolate->ThrowException(String::NewFromUtf8(g_pIsolate, "Wrong parameter types!"));
 		return;
 	}
-
 
 	Handle<Function> func = Handle<Function>::Cast(args[1]);
 
 	for (int i = 0; i < args[0]->ToNumber()->Int32Value(); i++)
-		func->Call(isolate->GetCurrentContext()->Global(), 0, {});
+		func->Call(g_pIsolate->GetCurrentContext()->Global(), 0, {});
 }
 
 void sleep(const FunctionCallbackInfo<Value>& args)
 {
-	auto isolate = args.GetIsolate();
-	HandleScope scope(isolate);
+	ENTER_V8
 
 	if (args.Length() != 1)
 	{
-		isolate->ThrowException(String::NewFromUtf8(isolate, "Wrong parameter count!"));
+		g_pIsolate->ThrowException(String::NewFromUtf8(g_pIsolate, "Wrong parameter count!"));
 		return;
 	}
 
 	if (!args[0]->IsNumber())
 	{
-		isolate->ThrowException(String::NewFromUtf8(isolate, "Wrong parameter types!"));
+		g_pIsolate->ThrowException(String::NewFromUtf8(g_pIsolate, "Wrong parameter types!"));
 		return;
 	}
 
@@ -97,8 +100,7 @@ struct TestObject
 
 	static void get(Local<String> property, const PropertyCallbackInfo<Value>& info) 
 	{
-		auto isolate = info.GetIsolate();
-		HandleScope scope(isolate);
+		ENTER_V8
 
 		TestObject *object = (TestObject *) Local<External>::Cast(info.Holder()->GetInternalField(0))->Value();
 
@@ -110,8 +112,7 @@ struct TestObject
 
 	static void set(Local<String> property, Local<Value> value, const PropertyCallbackInfo<Value>& info)
 	{
-		auto isolate = info.GetIsolate();
-		HandleScope scope(isolate);
+		ENTER_V8
 
 		TestObject *object = (TestObject *) Local<External>::Cast(info.Holder()->GetInternalField(0))->Value();
 
@@ -126,8 +127,7 @@ struct TestObject
 
 	static void sum(const FunctionCallbackInfo<Value>& args)
 	{
-		auto isolate = args.GetIsolate();
-		HandleScope scope(isolate);
+		ENTER_V8
 
 		TestObject *object = (TestObject *) Local<External>::Cast(args.This()->GetInternalField(0))->Value();
 
@@ -136,18 +136,17 @@ struct TestObject
 
 	static void CreateTestObject(const FunctionCallbackInfo<Value>& args)
 	{
-		auto isolate = args.GetIsolate();
-		HandleScope scope(isolate);
+		ENTER_V8
 
 		if (args.Length() != 2)
 		{
-			isolate->ThrowException(String::NewFromUtf8(isolate, "Wrong parameter count!"));
+			g_pIsolate->ThrowException(String::NewFromUtf8(g_pIsolate, "Wrong parameter count!"));
 			return;
 		}
 
 		if (!args[0]->IsNumber() || !args[1]->IsNumber())
 		{
-			isolate->ThrowException(String::NewFromUtf8(isolate, "Wrong parameter types!"));
+			g_pIsolate->ThrowException(String::NewFromUtf8(g_pIsolate, "Wrong parameter types!"));
 			return;
 		}
 		
@@ -160,37 +159,36 @@ struct TestObject
 		static Persistent<ObjectTemplate> objectTemplateHeap;
 		if (objectTemplateHeap.IsEmpty())
 		{
-			auto objectTemplate = ObjectTemplate::New(isolate);
+			auto objectTemplate = ObjectTemplate::New(g_pIsolate);
 
 			objectTemplate->SetInternalFieldCount(1);
 			objectTemplate->SetNamedPropertyHandler(TestObject::get, TestObject::set);
-			objectTemplate->Set(String::NewFromUtf8(isolate, "sum"), FunctionTemplate::New(isolate, TestObject::sum));
+			objectTemplate->Set(String::NewFromUtf8(g_pIsolate, "sum"), FunctionTemplate::New(g_pIsolate, TestObject::sum));
 
-			objectTemplateHeap.Reset(isolate, objectTemplate);
+			objectTemplateHeap.Reset(g_pIsolate, objectTemplate);
 		}
 
-		auto objectTemplate = Local<ObjectTemplate>::New(isolate, objectTemplateHeap);
+		auto objectTemplate = Local<ObjectTemplate>::New(g_pIsolate, objectTemplateHeap);
 		
 		auto object = objectTemplate->NewInstance();
-		object->SetInternalField(0, External::New(isolate, pThis));
+		object->SetInternalField(0, External::New(g_pIsolate, pThis));
 
 		args.GetReturnValue().Set(object);
 	}
 
 	static void DeleteTestObject(const FunctionCallbackInfo<Value>& args)
 	{
-		auto isolate = args.GetIsolate();
-		HandleScope scope(isolate);
+		ENTER_V8
 
 		if (args.Length() != 1)
 		{
-			isolate->ThrowException(String::NewFromUtf8(isolate, "Wrong parameter count!"));
+			g_pIsolate->ThrowException(String::NewFromUtf8(g_pIsolate, "Wrong parameter count!"));
 			return;
 		}
 
 		if (!args[0]->IsObject())
 		{
-			isolate->ThrowException(String::NewFromUtf8(isolate, "Wrong parameter types!"));
+			g_pIsolate->ThrowException(String::NewFromUtf8(g_pIsolate, "Wrong parameter types!"));
 			return;
 		}
 
@@ -198,10 +196,43 @@ struct TestObject
 		if (internal->Value() != NULL)
 		{
 			delete (TestObject *)internal->Value();
-			args[0]->ToObject()->SetInternalField(0, External::New(isolate, 0));
+			args[0]->ToObject()->SetInternalField(0, External::New(g_pIsolate, 0));
 		}
 	}
 };
+
+void TimedThread(const FunctionCallbackInfo<Value>& args)
+{
+	ENTER_V8
+
+	if (args.Length() != 2)
+	{
+		g_pIsolate->ThrowException(String::NewFromUtf8(g_pIsolate, "Wrong parameter count!"));
+		return;
+	}
+
+	if (!args[0]->IsNumber() || !args[1]->IsFunction())
+	{
+		g_pIsolate->ThrowException(String::NewFromUtf8(g_pIsolate, "Wrong parameter types!"));
+		return;
+	}
+
+	auto time = args[0]->ToNumber()->Int32Value();
+
+	Persistent<Function, CopyablePersistentTraits<Function>> func(g_pIsolate, Local<Function>::Cast(args[1]));
+
+	std::thread([time, func]() {
+		std::this_thread::sleep_for(std::chrono::milliseconds(time));
+		
+		ENTER_V8
+
+			Context::Scope context_scope(g_pIsolate->GetCurrentContext());
+
+		Local<Function>::New(g_pIsolate, func)->Call(g_pIsolate->GetCurrentContext()->Global(), 0, {});
+
+	}).detach();
+}
+
 Handle<Context> InitializeJS(Isolate *isolate)
 {
 	Handle<ObjectTemplate> global = ObjectTemplate::New(isolate);
@@ -212,14 +243,13 @@ Handle<Context> InitializeJS(Isolate *isolate)
 	global->Set(isolate, "CreateTestObject", FunctionTemplate::New(isolate, TestObject::CreateTestObject));
 	global->Set(isolate, "DeleteTestObject", FunctionTemplate::New(isolate, TestObject::DeleteTestObject));
 	global->Set(isolate, "GetTickCount", FunctionTemplate::New(isolate, [](const FunctionCallbackInfo<Value>& args) { args.GetReturnValue().Set(Number::New(args.GetIsolate(), GetTickCount())); }));
+	global->Set(isolate, "TimedThread", FunctionTemplate::New(isolate, TimedThread));
 
 	return Context::New(isolate, NULL, global);
 }
 
 int ReportError(Isolate *isolate, TryCatch *try_catch = 0)
 {
-	HandleScope scope(isolate);
-
 	struct __ {
 		~__() {
 			std::cin.get();
@@ -229,13 +259,12 @@ int ReportError(Isolate *isolate, TryCatch *try_catch = 0)
 	if (try_catch == NULL)
 		return 0;
 
-	const char *what = *String::Utf8Value(try_catch->Exception());
 	auto message = try_catch->Message();
 
 	if (message.IsEmpty())
-		std::cout << "Fehler: " << what << std::endl;
+		std::cout << "Fehler: " << std::endl;
 	else
-		std::cout << "Fehler: " << what << " @ " << message->GetLineNumber() << std::endl;
+		std::cout << "Fehler:  @ " << message->GetLineNumber() << std::endl;
 
 	return 1;
 }
@@ -245,28 +274,33 @@ int main(int argc, char* argv [])
 	V8::InitializeICU();
 	V8::InitializePlatform(v8::platform::CreateDefaultPlatform());
 	V8::Initialize();
+
 	
-	Isolate* isolate = Isolate::New();
+	char *gcFlag = "--expose-gc";
+
+	V8::SetFlagsFromString(gcFlag, strlen(gcFlag));
+	g_pIsolate = Isolate::New();
 	{
-		Isolate::Scope isolate_scope(isolate);
-		HandleScope handle_scope(isolate);
+		Isolate::Scope isolate_scope(g_pIsolate);
+		HandleScope handle_scope(g_pIsolate);
 
-		Handle<Context> context = InitializeJS(isolate);
+		Persistent<Context> ctx(g_pIsolate, InitializeJS(g_pIsolate));
+		Handle<Context> context = Local<Context>::New(g_pIsolate, ctx);
 		Context::Scope context_scope(context);
-
+		
 		TryCatch try_catch;
 
-		Local<String> code = String::NewFromUtf8(isolate, readFileContent("main.js").c_str());
+		Local<String> code = String::NewFromUtf8(g_pIsolate, readFileContent("main.js").c_str());
 		Local<Script> script = Script::Compile(code);
 		if (script.IsEmpty())
-			return ReportError(isolate, &try_catch);
+			return ReportError(g_pIsolate, &try_catch);
 
 		auto run = script->Run();
 		if (run.IsEmpty())
-			return ReportError(isolate, &try_catch);
+			return ReportError(g_pIsolate, &try_catch);
 
 		std::cout << "Finished!" << std::endl;
 	}
 
-	return ReportError(isolate, 0);
+	return ReportError(g_pIsolate, 0);
 }
